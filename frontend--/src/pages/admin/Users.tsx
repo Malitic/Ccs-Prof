@@ -2,26 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { UserX } from 'lucide-react';
 import { Card, SectionHeader, LoadingSpinner, ErrorMessage, SuccessMessage } from '../../components/ui/shared';
 import { adminDB } from '../../lib/database';
-import { db } from '../../lib/firebase';
-import { createUserWithEmailAndPassword, getAuth as getAuthFromApp, signOut as firebaseSignOut } from 'firebase/auth';
-import { initializeApp, getApps, type FirebaseOptions } from 'firebase/app';
-import { doc, setDoc } from 'firebase/firestore';
-
-const firebaseConfig: FirebaseOptions = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
-};
-
-const secondaryApp =
-  getApps().find((app) => app.name === 'admin-creator') ||
-  initializeApp(firebaseConfig, 'admin-creator');
-
-const secondaryAuth = getAuthFromApp(secondaryApp);
+import { postJson } from '../../lib/api';
 
 interface User {
   id: string;
@@ -57,7 +38,13 @@ export const AdminUsers: React.FC = () => {
     try {
       setLoading(true);
       const adminUsers = await adminDB.getAllAdmins();
-      setUsers(Array.isArray(adminUsers) ? adminUsers : []);
+      setUsers((Array.isArray(adminUsers) ? adminUsers : []).map((user: any) => ({
+        id: String(user.id || ''),
+        name: String(user.name || ''),
+        email: String(user.email || ''),
+        role: 'admin',
+        createdAt: user.createdAt,
+      })));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch users');
     } finally {
@@ -76,21 +63,12 @@ export const AdminUsers: React.FC = () => {
     try {
       setError(null);
       const normalizedEmail = formData.email.trim().toLowerCase();
-      const createdAdmin = await createUserWithEmailAndPassword(secondaryAuth, normalizedEmail, formData.password);
-
-      const userData: User = {
-        id: createdAdmin.user.uid,
+      await postJson('/api/auth/create-admin', {
         name: formData.name.trim(),
         email: normalizedEmail,
-        role: 'admin',
-        createdAt: new Date().toISOString(),
-      };
+        password: formData.password,
+      });
 
-      if (db) {
-        await setDoc(doc(db, 'users', createdAdmin.user.uid), userData);
-      }
-
-      await firebaseSignOut(secondaryAuth);
       setSuccess('Admin created successfully. Use these credentials to sign in.');
       setShowForm(false);
       resetForm();

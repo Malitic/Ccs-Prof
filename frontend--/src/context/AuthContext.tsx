@@ -95,47 +95,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let userDocUnsubscribe: (() => void) | null = null;
 
     const unsubscribe = onAuthStateChanged(auth!, (currentUser) => {
-      if (userDocUnsubscribe) {
-        userDocUnsubscribe();
-        userDocUnsubscribe = null;
-      }
-
-      try {
-        if (currentUser) {
-          setFirebaseUser(currentUser);
-          // Create basic user from Firebase Auth (don't wait for Firestore)
-          const basicUser: User = {
-            id: currentUser.uid,
-            name: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
-            email: currentUser.email || '',
-            role: getUserRoleFromEmail(currentUser.email || ''),
-            photoURL: currentUser.photoURL || undefined,
-          };
-          setUser(basicUser);
-          
-          // Fetch full user data from Firestore in background (non-blocking)
-          if (db) {
-            getDoc(doc(db, 'users', currentUser.uid))
-              .then((userDoc) => {
-                if (userDoc.exists()) {
-                  const userData = userDoc.data() as User;
-                  setUser(userData); // Update with full Firestore data
-                }
-              })
-              .catch((err) => {
-                console.warn('Failed to load Firestore user profile:', err);
-              });
-          }
-        } else {
-          setFirebaseUser(null);
-          setUser(null);
+      void (async () => {
+        if (userDocUnsubscribe) {
+          userDocUnsubscribe();
+          userDocUnsubscribe = null;
         }
-      } catch (err) {
-        console.error('Error in auth state change:', err);
-        setError('Authentication error');
-      } finally {
-        setIsLoading(false);
-      }
+
+        try {
+          if (currentUser) {
+            setFirebaseUser(currentUser);
+
+            const fallbackUser: User = {
+              id: currentUser.uid,
+              name: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+              email: currentUser.email || '',
+              role: getUserRoleFromEmail(currentUser.email || ''),
+              photoURL: currentUser.photoURL || undefined,
+            };
+
+            if (db) {
+              try {
+                const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+                if (userDoc.exists()) {
+                  setUser(userDoc.data() as User);
+                } else {
+                  setUser(fallbackUser);
+                }
+              } catch (err) {
+                console.warn('Failed to load Firestore user profile:', err);
+                setUser(fallbackUser);
+              }
+            } else {
+              setUser(fallbackUser);
+            }
+          } else {
+            setFirebaseUser(null);
+            setUser(null);
+          }
+        } catch (err) {
+          console.error('Error in auth state change:', err);
+          setError('Authentication error');
+        } finally {
+          setIsLoading(false);
+        }
+      })();
     });
 
     return () => {

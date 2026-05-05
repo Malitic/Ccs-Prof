@@ -6,27 +6,10 @@ import { useSearch } from '../../hooks/useAsync';
 import { usePagination } from '../../hooks/useAsync';
 import { facultyDB, studentDB, coursesDB, eventsDB } from '../../lib/database';
 import { db } from '../../lib/firebase';
-import { createUserWithEmailAndPassword, getAuth as getAuthFromApp, signOut as firebaseSignOut } from 'firebase/auth';
-import { initializeApp, getApps, type FirebaseOptions } from 'firebase/app';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { LoadingSpinner, ErrorMessage, EmptyState, FormInput, SectionHeader, Pagination, Card } from '../../components/ui/shared';
 import { emitSyncEvent } from '../../lib/syncEvents';
-
-const firebaseConfig: FirebaseOptions = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
-};
-
-const secondaryApp =
-  getApps().find((app) => app.name === 'faculty-creator') ||
-  initializeApp(firebaseConfig, 'faculty-creator');
-
-const secondaryAuth = getAuthFromApp(secondaryApp);
+import { postJson } from '../../lib/api';
 
 interface Faculty {
   id: string | number;
@@ -240,9 +223,11 @@ export const AdminFaculty: React.FC = () => {
         emitSyncEvent('facultyUpdated', { id: editingId, ...cleaned }, 'Faculty');
         alert('Faculty updated successfully!');
       } else {
-        const authResult = await createUserWithEmailAndPassword(secondaryAuth, cleaned.email, normalizedPassword);
-        const uid = authResult.user.uid;
-        await firebaseSignOut(secondaryAuth);
+        const createdFaculty = await postJson<{ uid: string }>('/api/auth/create-faculty', {
+          ...cleaned,
+          password: normalizedPassword,
+        });
+        const uid = createdFaculty.uid;
 
         const facultyPayload = {
           ...cleaned,
