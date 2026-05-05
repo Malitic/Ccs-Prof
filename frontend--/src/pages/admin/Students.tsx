@@ -3,10 +3,28 @@ import { Eye, EyeOff, Search, X, User } from 'lucide-react';
 import { useAsync, useForm, usePagination, useSearch } from '../../hooks/useAsync';
 import { studentDB } from '../../lib/database';
 import { db } from '../../lib/firebase';
+import { createUserWithEmailAndPassword, getAuth as getAuthFromApp, signOut as firebaseSignOut } from 'firebase/auth';
+import { initializeApp, getApps, type FirebaseOptions } from 'firebase/app';
 import { doc, setDoc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { FormInput, SectionHeader, Card } from '../../components/ui/shared';
 import { emitSyncEvent } from '../../lib/syncEvents';
-import { postJson } from '../../lib/api';
+
+// Setup secondary Firebase app for student account creation
+const firebaseConfig: FirebaseOptions = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+};
+
+const secondaryApp =
+  getApps().find((app) => app.name === 'student-creator') ||
+  initializeApp(firebaseConfig, 'student-creator');
+
+const secondaryAuth = getAuthFromApp(secondaryApp);
 
 const initialFormState = {
   name: '',
@@ -299,11 +317,8 @@ export const AdminStudents: React.FC = () => {
       } else {
         // CREATE OPERATION
         console.log('[STUDENT] Creating new student account:', normalizedEmail);
-        const createdStudent = await postJson<{ uid: string }>('/api/auth/create-student', {
-          ...cleanedDataToSave,
-          password: normalizedPassword,
-        });
-        const uid = createdStudent.uid;
+        const authResult = await createUserWithEmailAndPassword(secondaryAuth, normalizedEmail, normalizedPassword);
+        const uid = authResult.user.uid;
         console.log('[STUDENT] Firebase Auth created user with UID:', uid);
 
         const userData = {
@@ -312,6 +327,8 @@ export const AdminStudents: React.FC = () => {
           role: 'student',
           createdAt: new Date().toISOString(),
         };
+
+        await firebaseSignOut(secondaryAuth);
 
         console.log('[STUDENT] Adding to student database');
         await studentDB.addStudent(userData);

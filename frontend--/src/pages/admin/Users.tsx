@@ -2,7 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { UserX } from 'lucide-react';
 import { Card, SectionHeader, LoadingSpinner, ErrorMessage, SuccessMessage } from '../../components/ui/shared';
 import { adminDB } from '../../lib/database';
-import { postJson } from '../../lib/api';
+import { db } from '../../lib/firebase';
+import { createUserWithEmailAndPassword, getAuth as getAuthFromApp, signOut as firebaseSignOut } from 'firebase/auth';
+import { initializeApp, getApps, type FirebaseOptions } from 'firebase/app';
+import { doc, setDoc } from 'firebase/firestore';
+
+const firebaseConfig: FirebaseOptions = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+};
+
+const secondaryApp =
+  getApps().find((app) => app.name === 'admin-creator') ||
+  initializeApp(firebaseConfig, 'admin-creator');
+
+const secondaryAuth = getAuthFromApp(secondaryApp);
 
 interface User {
   id: string;
@@ -63,11 +82,22 @@ export const AdminUsers: React.FC = () => {
     try {
       setError(null);
       const normalizedEmail = formData.email.trim().toLowerCase();
-      await postJson('/api/auth/create-admin', {
+
+      const createdAdmin = await createUserWithEmailAndPassword(secondaryAuth, normalizedEmail, formData.password);
+
+      const userData: User = {
+        id: createdAdmin.user.uid,
         name: formData.name.trim(),
         email: normalizedEmail,
-        password: formData.password,
-      });
+        role: 'admin',
+        createdAt: new Date().toISOString(),
+      };
+
+      if (db) {
+        await setDoc(doc(db, 'users', createdAdmin.user.uid), userData);
+      }
+
+      await firebaseSignOut(secondaryAuth);
 
       setSuccess('Admin created successfully. Use these credentials to sign in.');
       setShowForm(false);
