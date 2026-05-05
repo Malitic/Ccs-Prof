@@ -79,8 +79,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
-  // Helper function to determine user role from email
-  const getUserRoleFromEmail = (email: string): UserRole => {
+  const resolveUserRole = async (uid: string, email: string): Promise<UserRole> => {
+    if (!db) {
+      if (email.includes('admin')) return 'admin';
+      if (email.includes('faculty')) return 'faculty';
+      return 'student';
+    }
+
+    try {
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data() as Partial<User> & { role?: string };
+        if (userData.role === 'admin' || userData.role === 'faculty' || userData.role === 'student') {
+          return userData.role;
+        }
+      }
+
+      const facultyDoc = await getDoc(doc(db, 'faculties', uid));
+      if (facultyDoc.exists()) {
+        return 'faculty';
+      }
+
+      const studentDoc = await getDoc(doc(db, 'students', uid));
+      if (studentDoc.exists()) {
+        return 'student';
+      }
+    } catch (err) {
+      console.warn('Failed to resolve user role from Firestore:', err);
+    }
+
     if (email.includes('admin')) return 'admin';
     if (email.includes('faculty')) return 'faculty';
     return 'student';
@@ -109,7 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               id: currentUser.uid,
               name: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
               email: currentUser.email || '',
-              role: getUserRoleFromEmail(currentUser.email || ''),
+              role: await resolveUserRole(currentUser.uid, currentUser.email || ''),
               photoURL: currentUser.photoURL || undefined,
             };
 
@@ -157,7 +184,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (bypassDemo) {
         console.log('[AUTH] Demo bypass active - setting fake user for', email);
         const signedInEmail = email || '';
-        const detectedRole = getUserRoleFromEmail(signedInEmail);
+        const detectedRole = await resolveUserRole(signedInEmail, signedInEmail);
         const fakeFirebaseUser = { uid: signedInEmail, email: signedInEmail, displayName: signedInEmail.split('@')[0] } as any;
         setFirebaseUser(fakeFirebaseUser);
         const fallbackUser: User = {
@@ -180,8 +207,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('[AUTH] Login successful for:', email, 'UID:', result.user.uid);
       
       const signedInEmail = result.user.email || '';
-      const detectedRole = getUserRoleFromEmail(signedInEmail);
-      console.log('[AUTH] Detected role from email:', detectedRole);
+      const detectedRole = await resolveUserRole(result.user.uid, signedInEmail);
+      console.log('[AUTH] Detected role from Firestore:', detectedRole);
 
       if (db) {
         try {
